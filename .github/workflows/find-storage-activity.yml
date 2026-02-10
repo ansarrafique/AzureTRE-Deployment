@@ -1,0 +1,49 @@
+name: Find Storage Account Creations
+
+on:
+  workflow_dispatch:
+
+jobs:
+  find-storage-events:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for convenience)
+        uses: actions/checkout@v4
+
+      - name: Login to Azure (Service Principal)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          subscription-id: a871d7cd-0ea0-4feb-9b0b-3e7fee1bcbe6
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Find storage account write events and print terraform import commands
+        env:
+          SUB: a871d7cd-0ea0-4feb-9b0b-3e7fee1bcbe6   # change if needed
+          LOOKBACK_HOURS: 12
+          TERRAFORM_ADDR: "azurerm_storage_account.stg"
+        run: |
+          END="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          START="$(date -u -d "${LOOKBACK_HOURS} hours ago" '+%Y-%m-%dT%H:%M:%SZ')"
+          echo "Searching activity log for storageAccount write events in $SUB from $START to $END"
+          events_json="$(az monitor activity-log list \
+            --subscription "$SUB" \
+            --start-time "$START" \
+            --end-time "$END" \
+            --query "[?operationName.value=='Microsoft.Storage/storageAccounts/write']" \
+            -o json)"
+          echo "$events_json" | jq -r '.[] | "\(.eventTimestamp) \t \(.caller) \t \(.resourceId)"' | nl -ba || true
+          # print terraform import commands
+          for rid in $(echo "$events_json" | jq -r '.[].resourceId' | sort -u); do
+            rg="$(echo "$rid" | awk -F'/resourceGroups/' '{print $2}' | awk -F'/' '{print $1}')"
+            name="$(echo "$rid" | awk -F'/storageAccounts/' '{print $2}')"
+            if [ -n "$rg" ] && [ -n "$name" ]; then
+              echo "terraform import '${TERRAFORM_ADDR}' '/subscriptions/${SUB}/resourceGroups/${rg}/providers/Microsoft.Storage/storageAccounts/${name}'"
+            else
+              echo "Could not parse resourceId: $rid"
+            fi
+          done
