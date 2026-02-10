@@ -1,49 +1,127 @@
-name: Find Storage Account Creations
+name: Find & (optionally) Import Storage Accounts
 
 on:
   workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: 'How many hours back to search the activity log'
+        required: false
+        default: '12'
+      import:
+        description: 'If true, run terraform import for the discovered storage accounts (use with caution)'
+        required: false
+        default: 'false'
+      terraform_dir:
+        description: 'Directory where Terraform working copy / backend is configured (for import)'
+        required: false
+        default: '.'
 
 jobs:
-  find-storage-events:
+  find-and-prepare-imports:
     runs-on: ubuntu-latest
+    env:
+      SUB: a871d7cd-0ea0-4feb-9b0b-3e7fee1bcbe6   # adjust if needed
+      TERRAFORM_ADDR: azurerm_storage_account.stg
+
     steps:
-      - name: Checkout (for convenience)
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to Azure (Service Principal)
+      - name: Login to Azure using AZURE_CREDENTIALS
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          subscription-id: a871d7cd-0ea0-4feb-9b0b-3e7fee1bcbe6
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          subscription-id: ${{ env.SUB }}
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Install jq and terraform (if import requested)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          if [ "${{ github.event.inputs.import }}" = "true" ]; then
+            echo "Installing terraform..."
+            T_VERSION="1.6.7" # adjust if you require specific version
+            wget -q "https://releases.hashicorp.com/terraform/${T_VERSION}/terraform_${T_VERSION}_linux_amd64.zip"
+            unzip -o terraform_${T_VERSION}_linux_amd64.zip -d /usr/local/bin
+            terraform -version
+          else
+            echo "Import not requested; skipping terraform install."
+          fi
 
       - name: Find storage account write events and print terraform import commands
-        env:
-          SUB: a871d7cd-0ea0-4feb-9b0b-3e7fee1bcbe6   # change if needed
-          LOOKBACK_HOURS: 12
-          TERRAFORM_ADDR: "azurerm_storage_account.stg"
+        id: find_events
         run: |
+          set -euo pipefail
+
+          LOOKBACK_HOURS="${{ github.event.inputs.lookback_hours }}"
           END="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           START="$(date -u -d "${LOOKBACK_HOURS} hours ago" '+%Y-%m-%dT%H:%M:%SZ')"
-          echo "Searching activity log for storageAccount write events in $SUB from $START to $END"
+
+          echo "Searching activity log for storageAccount write events in subscription $SUB"
+          echo "Time window: $START -> $END"
+
           events_json="$(az monitor activity-log list \
             --subscription "$SUB" \
             --start-time "$START" \
             --end-time "$END" \
             --query "[?operationName.value=='Microsoft.Storage/storageAccounts/write']" \
             -o json)"
-          echo "$events_json" | jq -r '.[] | "\(.eventTimestamp) \t \(.caller) \t \(.resourceId)"' | nl -ba || true
-          # print terraform import commands
-          for rid in $(echo "$events_json" | jq -r '.[].resourceId' | sort -u); do
+
+          if [ "$(echo "$events_json" | jq 'length')" -eq 0 ]; then
+            echo "No storage account write events found in the last ${LOOKBACK_HOURS} hours."
+            echo "::set-output name=found::false"
+            exit 0
+          fi
+
+          # Print events
+          echo "Events (timestamp | caller | resourceId):"
+          echo "$events_json" | jq -r '.[] | "\(.eventTimestamp) | \(.caller) | \(.resourceId)"' | nl -ba
+
+          # Build unique list of resourceIds and corresponding import commands
+          resource_ids=$(echo "$events_json" | jq -r '.[].resourceId' | sort -u)
+          echo "Discovered resourceIds:"
+          echo "$resource_ids"
+
+          imports_json="[]"
+          for rid in $resource_ids; do
             rg="$(echo "$rid" | awk -F'/resourceGroups/' '{print $2}' | awk -F'/' '{print $1}')"
             name="$(echo "$rid" | awk -F'/storageAccounts/' '{print $2}')"
             if [ -n "$rg" ] && [ -n "$name" ]; then
-              echo "terraform import '${TERRAFORM_ADDR}' '/subscriptions/${SUB}/resourceGroups/${rg}/providers/Microsoft.Storage/storageAccounts/${name}'"
+              import_cmd="terraform import '${TERRAFORM_ADDR}' '/subscriptions/${SUB}/resourceGroups/${rg}/providers/Microsoft.Storage/storageAccounts/${name}'"
+              echo "$import_cmd"
+              imports_json=$(echo "$imports_json" | jq --arg rg "$rg" --arg name "$name" --arg cmd "$import_cmd" '. + [{resourceGroup:$rg, name:$name, cmd:$cmd}]')
             else
-              echo "Could not parse resourceId: $rid"
+              echo "Warning: could not parse resourceId: $rid"
             fi
           done
+
+          # Expose discovered imports to later steps
+          echo "::set-output name=imports::$(echo "$imports_json" | jq -c '.')"
+          echo "::set-output name=found::true"
+
+      - name: Optionally run terraform import for discovered accounts
+        if: ${{ github.event.inputs.import == 'true' && steps.find_events.outputs.found == 'true' }}
+        working-directory: ${{ github.event.inputs.terraform_dir }}
+        run: |
+          set -euo pipefail
+
+          imports_json='${{ steps.find_events.outputs.imports }}'
+          echo "Imports to run: $imports_json"
+
+          # Initialize terraform (assumes backend is configured in the terraform_dir)
+          terraform init -input=false
+
+          # Loop through items and import
+          echo "$imports_json" | jq -c '.[]' | while read -r item; do
+            name=$(echo "$item" | jq -r .name)
+            rg=$(echo "$item" | jq -r .resourceGroup)
+            cmd=$(echo "$item" | jq -r .cmd)
+
+            echo "Running import for storage account ${name} in ${rg}"
+            # Run the command printed earlier (this will add the resource to the configured terraform state)
+            eval "$cmd"
+          done
+
+      - name: Final note
+        run: |
+          echo "Done. If imports were performed, check your Terraform state and plan to ensure everything looks correct."
+          echo "If you only printed imports, copy the desired import commands into a runner with access to your Terraform backend (or re-run this workflow with import=true)."
