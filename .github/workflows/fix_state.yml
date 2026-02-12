@@ -28,11 +28,18 @@ jobs:
 
       - name: Terraform Init and Fix
         run: |
-          # 1. Navigate to the correct nested directory
-          # We add the 'AzureTRE' prefix here
-          cd $GITHUB_WORKSPACE/AzureTRE/core/terraform
+          # 1. Automatically find the directory containing 'main.tf' for the core infrastructure
+          TARGET_DIR=$(find . -type d -path "*/core/terraform" | head -n 1)
           
-          echo "Current directory is: $(pwd)"
+          if [ -z "$TARGET_DIR" ]; then
+            echo "ERROR: Could not find the 'core/terraform' directory."
+            echo "Listing all directories to help debug:"
+            find . -maxdepth 3 -type d
+            exit 1
+          fi
+
+          echo "Found directory at: $TARGET_DIR"
+          cd "$TARGET_DIR"
           
           # 2. Initialize with the Azure Backend
           terraform init \
@@ -43,11 +50,13 @@ jobs:
             -backend-config="use_azuread_auth=true"
 
           # 3. Surgical State Removal
-          # Removing the 6 associations and the 1 route table
+          # Removing the stale Route Table associations from the state memory
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_shared_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_processor_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
+          
+          # Remove the Route Table reference so Terraform can recreate it correctly
           terraform state rm -lock=false module.network.azurerm_route_table.rt || true
