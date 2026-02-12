@@ -26,28 +26,27 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init
-        # We'll use the shell execution to find the directory if the path is tricky
+      - name: Terraform Init and Fix
         run: |
+          # 1. Find where the terraform files actually are
+          # This command moves into the core/terraform directory regardless of the root name
+          cd $(find . -type d -path "*/core/terraform" | head -n 1)
+          
+          echo "Current directory is: $(pwd)"
+
+          # 2. Initialize
           terraform init \
             -backend-config="resource_group_name=oxdsh_mgmt" \
             -backend-config="storage_account_name=oxdshstg" \
             -backend-config="container_name=tfstate" \
             -backend-config="key=core.terraform.tfstate" \
             -backend-config="use_azuread_auth=true"
-        working-directory: AzureTRE/core/terraform
 
-      - name: Surgical State Removal
-        run: |
-          # Removing the links that are pointing to the missing/stale Route Table
-          # We use '|| true' so the workflow succeeds even if the resource is already gone from state
+          # 3. Surgical State Removal
           terraform state rm azurerm_subnet_route_table_association.rt_shared_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_airlock_processor_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
-          
-          # Crucial: Remove the Route Table reference itself so Terraform recreates it properly
           terraform state rm module.network.azurerm_route_table.rt || true
-        working-directory: ./AzureTRE/core/terraform
