@@ -27,6 +27,7 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
+        # We'll use the shell execution to find the directory if the path is tricky
         run: |
           terraform init \
             -backend-config="resource_group_name=oxdsh_mgmt" \
@@ -34,7 +35,7 @@ jobs:
             -backend-config="container_name=tfstate" \
             -backend-config="key=core.terraform.tfstate" \
             -backend-config="use_azuread_auth=true"
-        working-directory: ./AzureTRE/core/terraform
+        working-directory: AzureTRE/core/terraform
 
       - name: Surgical State Removal
         run: |
