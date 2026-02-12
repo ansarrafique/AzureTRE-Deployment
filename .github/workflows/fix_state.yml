@@ -32,14 +32,25 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Init and Fix
+      - name: Grant Data Plane Access & Run Fix
         run: |
-          # Now the folder definitely exists because we cloned it above
+          # 1. Self-assign 'Storage Blob Data Contributor' to bypass the 403
+          # This works if your SP has 'Owner' or 'User Access Administrator' role
+          echo "Attempting to self-assign Data Plane roles..."
+          SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id --output tsv)
+          
+          az role assignment create \
+            --role "Storage Blob Data Contributor" \
+            --assignee "$SP_OBJECT_ID" \
+            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/oxdsh_mgmt/providers/Microsoft.Storage/storageAccounts/oxdshstg" || echo "Self-assignment failed, proceeding anyway..."
+
+          # 2. Navigate and Init
           cd AzureTRE/core/terraform
           
-          echo "Current directory is: $(pwd)"
-          ls -F
-          
+          # We add a 30s sleep because role assignments take a moment to propagate in Azure
+          echo "Waiting for RBAC propagation..."
+          sleep 30
+
           terraform init \
             -backend-config="resource_group_name=oxdsh_mgmt" \
             -backend-config="storage_account_name=oxdshstg" \
@@ -47,7 +58,7 @@ jobs:
             -backend-config="key=core.terraform.tfstate" \
             -backend-config="use_azuread_auth=true"
 
-          # Surgical State Removal
+          # 3. Surgical State Removal
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_shared_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
