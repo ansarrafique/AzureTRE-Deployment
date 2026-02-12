@@ -32,25 +32,32 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Grant Data Plane Access & Run Fix
+      - name: Bypass Firewall & Run Fix
         run: |
-          # 1. Self-assign 'Storage Blob Data Contributor' to bypass the 403
-          # This works if your SP has 'Owner' or 'User Access Administrator' role
-          echo "Attempting to self-assign Data Plane roles..."
+          # 1. Get the Runner's Public IP
+          RUNNER_IP=$(curl -s https://api.ipify.org)
+          echo "Runner IP is: $RUNNER_IP"
+
+          # 2. Add IP to Storage Firewall
+          echo "Whitelisting Runner IP in storage firewall..."
+          az storage account network-rule add \
+            --resource-group oxdsh_mgmt \
+            --account-name oxdshstg \
+            --ip-address $RUNNER_IP
+
+          # 3. Ensure Data Plane role is present (Object ID from previous step)
           SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id --output tsv)
-          
           az role assignment create \
             --role "Storage Blob Data Contributor" \
             --assignee "$SP_OBJECT_ID" \
-            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/oxdsh_mgmt/providers/Microsoft.Storage/storageAccounts/oxdshstg" || echo "Self-assignment failed, proceeding anyway..."
+            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/oxdsh_mgmt/providers/Microsoft.Storage/storageAccounts/oxdshstg" || true
 
-          # 2. Navigate and Init
+          # 4. Wait for propagation (Firewall updates can take ~30-60 seconds)
+          echo "Waiting 60s for firewall propagation..."
+          sleep 60
+
+          # 5. Run Terraform commands
           cd AzureTRE/core/terraform
-          
-          # We add a 30s sleep because role assignments take a moment to propagate in Azure
-          echo "Waiting for RBAC propagation..."
-          sleep 30
-
           terraform init \
             -backend-config="resource_group_name=oxdsh_mgmt" \
             -backend-config="storage_account_name=oxdshstg" \
@@ -58,7 +65,6 @@ jobs:
             -backend-config="key=core.terraform.tfstate" \
             -backend-config="use_azuread_auth=true"
 
-          # 3. Surgical State Removal
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_shared_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
@@ -66,3 +72,10 @@ jobs:
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
           terraform state rm -lock=false module.network.azurerm_route_table.rt || true
+
+          # 6. Cleanup (Remove IP from firewall)
+          echo "Cleaning up firewall rule..."
+          az storage account network-rule remove \
+            --resource-group oxdsh_mgmt \
+            --account-name oxdshstg \
+            --ip-address $RUNNER_IP
