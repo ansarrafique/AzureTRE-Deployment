@@ -5,15 +5,24 @@ on:
 
 jobs:
   repair:
+    # Explicitly using your environment name
+    environment: CICD
     runs-on: ubuntu-latest
+    
+    # Required for OIDC/Federated Credential authentication
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Azure Login
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-          environment: ${{ (vars.AZURE_ENVIRONMENT != '' && vars.AZURE_ENVIRONMENT) || 'AzureCloud' }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -30,7 +39,8 @@ jobs:
 
       - name: Surgical State Removal
         run: |
-          # Removing the links that are pointing to the missing Route Table
+          # Removing the links that are pointing to the missing/stale Route Table
+          # We use '|| true' so the workflow succeeds even if the resource is already gone from state
           terraform state rm azurerm_subnet_route_table_association.rt_shared_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
@@ -38,6 +48,6 @@ jobs:
           terraform state rm azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association || true
           terraform state rm azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
           
-          # Remove the Route Table itself so it recreates
+          # Crucial: Remove the Route Table reference itself so Terraform recreates it properly
           terraform state rm module.network.azurerm_route_table.rt || true
         working-directory: ./AzureTRE/core/terraform
