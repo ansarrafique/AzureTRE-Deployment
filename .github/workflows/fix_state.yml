@@ -1,15 +1,13 @@
 name: "Surgical State Fix"
 
 on:
-  workflow_dispatch: # Allows you to trigger this manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
   repair:
-    # Explicitly using your environment name
     environment: CICD
     runs-on: ubuntu-latest
     
-    # Required for OIDC/Federated Credential authentication
     permissions:
       id-token: write
       contents: read
@@ -20,21 +18,19 @@ jobs:
 
       - name: Clone Upstream AzureTRE
         run: |
-          # Mimicking your devcontainer: Fetching the actual Terraform code
           git clone --branch v0.25.0 https://github.com/ansarrafique/AzureTRE.git AzureTRE
       
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          environment: ${{ (vars.AZURE_ENVIRONMENT != '' && vars.AZURE_ENVIRONMENT) || 'AzureCloud' }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
       - name: Bypass Firewall & Run Fix
         run: |
-          # 1. Enable Public Network Access (Required because 'Disabled' overrides IP rules)
+          # 1. Enable Public Network Access
           echo "Enabling Public Network Access..."
           az storage account update \
             --resource-group oxdsh_mgmt \
@@ -49,11 +45,10 @@ jobs:
             --account-name oxdshstg \
             --ip-address $RUNNER_IP
 
-          # 3. Wait for Azure to apply the network change
           echo "Waiting 60s for network propagation..."
           sleep 60
 
-          # 4. Run Terraform Fix
+          # 3. Run Terraform Fix
           cd AzureTRE/core/terraform
           terraform init \
             -backend-config="resource_group_name=oxdsh_mgmt" \
@@ -62,15 +57,31 @@ jobs:
             -backend-config="key=core.terraform.tfstate" \
             -backend-config="use_azuread_auth=true"
 
-          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_shared_subnet_association || true
-          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
-          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
-          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_processor_subnet_association || true
-          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association || true
-          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
-          terraform state rm -lock=false module.network.azurerm_route_table.rt || true
+          echo "--- Current State (Route Table related) ---"
+          terraform state list | grep 'rt' || echo "No matching resources found."
 
-          # 5. RESTORE SECURITY - Flip it back to Disabled
+          # 4. Robust Removal Loop
+          # We check if each resource exists before attempting to remove it to avoid 'Invalid target' errors
+          RESOURCES=(
+            "azurerm_subnet_route_table_association.rt_shared_subnet_association"
+            "azurerm_subnet_route_table_association.rt_resource_processor_subnet_association"
+            "azurerm_subnet_route_table_association.rt_web_app_subnet_association"
+            "azurerm_subnet_route_table_association.rt_airlock_processor_subnet_association"
+            "azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association"
+            "azurerm_subnet_route_table_association.rt_airlock_events_subnet_association"
+            "module.network.azurerm_route_table.rt"
+          )
+
+          for res in "${RESOURCES[@]}"; do
+            if terraform state list | grep -q "$res"; then
+              echo "Removing $res..."
+              terraform state rm -lock=false "$res" || true
+            else
+              echo "Skipping $res: Not found in state."
+            fi
+          done
+
+          # 5. RESTORE SECURITY
           echo "Restoring security settings..."
           az storage account network-rule remove \
             --resource-group oxdsh_mgmt \
