@@ -28,17 +28,9 @@ jobs:
 
       - name: Terraform Init and Fix
         run: |
-          # 1. Navigate to the nested directory
-          # Checking if AzureTRE folder exists, then moving in
-          if [ -d "$GITHUB_WORKSPACE/AzureTRE/core/terraform" ]; then
-            cd $GITHUB_WORKSPACE/AzureTRE/core/terraform
-          elif [ -d "$GITHUB_WORKSPACE/core/terraform" ]; then
-            cd $GITHUB_WORKSPACE/core/terraform
-          else
-            echo "Path not found. Listing root directory to find the right path:"
-            ls -R $GITHUB_WORKSPACE
-            exit 1
-          fi
+          # 1. Navigate to the correct nested directory
+          # We add the 'AzureTRE' prefix here
+          cd $GITHUB_WORKSPACE/AzureTRE/core/terraform
           
           echo "Current directory is: $(pwd)"
           
@@ -51,7 +43,7 @@ jobs:
             -backend-config="use_azuread_auth=true"
 
           # 3. Surgical State Removal
-          # Using -lock=false to bypass any 'Lease' locks from previous failed runs
+          # Removing the 6 associations and the 1 route table
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_shared_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
