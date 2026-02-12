@@ -28,13 +28,13 @@ jobs:
 
       - name: Terraform Init and Fix
         run: |
-          # 1. Find where the terraform files actually are
-          # This command moves into the core/terraform directory regardless of the root name
-          cd $(find . -type d -path "*/core/terraform" | head -n 1)
+          # 1. Navigate to the absolute path within the runner
+          cd $GITHUB_WORKSPACE/core/terraform
           
           echo "Current directory is: $(pwd)"
-
-          # 2. Initialize
+          ls -F # This will list files so we can see main.tf
+          
+          # 2. Initialize with the Azure Backend
           terraform init \
             -backend-config="resource_group_name=oxdsh_mgmt" \
             -backend-config="storage_account_name=oxdshstg" \
@@ -43,10 +43,11 @@ jobs:
             -backend-config="use_azuread_auth=true"
 
           # 3. Surgical State Removal
-          terraform state rm azurerm_subnet_route_table_association.rt_shared_subnet_association || true
-          terraform state rm azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
-          terraform state rm azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
-          terraform state rm azurerm_subnet_route_table_association.rt_airlock_processor_subnet_association || true
-          terraform state rm azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association || true
-          terraform state rm azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
-          terraform state rm module.network.azurerm_route_table.rt || true
+          # We use -lock=false in case the previous failed run held a lock on the state
+          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_shared_subnet_association || true
+          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_resource_processor_subnet_association || true
+          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_web_app_subnet_association || true
+          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_processor_subnet_association || true
+          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_storage_subnet_association || true
+          terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
+          terraform state rm -lock=false module.network.azurerm_route_table.rt || true
