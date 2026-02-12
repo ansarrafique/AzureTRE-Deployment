@@ -34,29 +34,26 @@ jobs:
 
       - name: Bypass Firewall & Run Fix
         run: |
-          # 1. Get the Runner's Public IP
-          RUNNER_IP=$(curl -s https://api.ipify.org)
-          echo "Runner IP is: $RUNNER_IP"
+          # 1. Enable Public Network Access (Required because 'Disabled' overrides IP rules)
+          echo "Enabling Public Network Access..."
+          az storage account update \
+            --resource-group oxdsh_mgmt \
+            --name oxdshstg \
+            --public-network-access Enabled
 
-          # 2. Add IP to Storage Firewall
-          echo "Whitelisting Runner IP in storage firewall..."
+          # 2. Add Runner IP to Firewall
+          RUNNER_IP=$(curl -s https://api.ipify.org)
+          echo "Whitelisting Runner IP: $RUNNER_IP"
           az storage account network-rule add \
             --resource-group oxdsh_mgmt \
             --account-name oxdshstg \
             --ip-address $RUNNER_IP
 
-          # 3. Ensure Data Plane role is present (Object ID from previous step)
-          SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id --output tsv)
-          az role assignment create \
-            --role "Storage Blob Data Contributor" \
-            --assignee "$SP_OBJECT_ID" \
-            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/oxdsh_mgmt/providers/Microsoft.Storage/storageAccounts/oxdshstg" || true
-
-          # 4. Wait for propagation (Firewall updates can take ~30-60 seconds)
-          echo "Waiting 60s for firewall propagation..."
+          # 3. Wait for Azure to apply the network change
+          echo "Waiting 60s for network propagation..."
           sleep 60
 
-          # 5. Run Terraform commands
+          # 4. Run Terraform Fix
           cd AzureTRE/core/terraform
           terraform init \
             -backend-config="resource_group_name=oxdsh_mgmt" \
@@ -73,9 +70,14 @@ jobs:
           terraform state rm -lock=false azurerm_subnet_route_table_association.rt_airlock_events_subnet_association || true
           terraform state rm -lock=false module.network.azurerm_route_table.rt || true
 
-          # 6. Cleanup (Remove IP from firewall)
-          echo "Cleaning up firewall rule..."
+          # 5. RESTORE SECURITY - Flip it back to Disabled
+          echo "Restoring security settings..."
           az storage account network-rule remove \
             --resource-group oxdsh_mgmt \
             --account-name oxdshstg \
             --ip-address $RUNNER_IP
+          
+          az storage account update \
+            --resource-group oxdsh_mgmt \
+            --name oxdshstg \
+            --public-network-access Disabled
