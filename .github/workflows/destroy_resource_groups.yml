@@ -1,0 +1,67 @@
+name: "Destroy TRE (Core + Management)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Clone AzureTRE
+        run: |
+          git clone --branch v0.25.0 https://github.com/ansarrafique/AzureTRE.git AzureTRE
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set Subscription
+        run: |
+          az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # =========================
+      # Destroy CORE
+      # =========================
+      - name: Destroy CORE terraform
+        run: |
+          set -euo pipefail
+
+          cd AzureTRE/core/terraform
+
+          terraform init \
+            -backend-config="resource_group_name=oxdsh_mgmt" \
+            -backend-config="storage_account_name=oxdshstg" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=core.terraform.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
+          terraform destroy -auto-approve -lock=false
+
+      # =========================
+      # Destroy MANAGEMENT
+      # =========================
+      - name: Destroy MANAGEMENT terraform
+        run: |
+          set -euo pipefail
+
+          cd AzureTRE/management/terraform
+
+          terraform init \
+            -backend-config="resource_group_name=oxdsh_mgmt" \
+            -backend-config="storage_account_name=oxdshstg" \
+            -backend-config="container_name=tfstate" \
+            -backend-config="key=management.terraform.tfstate" \
+            -backend-config="use_azuread_auth=true"
+
+          terraform destroy -auto-approve -lock=false
