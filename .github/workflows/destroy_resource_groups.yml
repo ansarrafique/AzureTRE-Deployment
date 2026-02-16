@@ -1,68 +1,145 @@
-name: "Destroy TRE (Core + Management)"
+name: "Delete rg-oxdsh & oxdsh_mgmt (snapshot + delete)"
 
 on:
   workflow_dispatch:
 
 jobs:
-  destroy:
+  repair:
     environment: CICD
     runs-on: ubuntu-latest
+
     permissions:
       id-token: write
       contents: read
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Clone AzureTRE
-        run: |
-          git clone --branch v0.25.0 https://github.com/ansarrafique/AzureTRE.git AzureTRE
 
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set Subscription
+      - name: Set subscription
         run: |
           az account set --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Create output folder
+        run: mkdir -p artifacts
 
-      # =========================
-      # Destroy CORE
-      # =========================
-      - name: Destroy CORE terraform
+      - name: Snapshot resources in rg-oxdsh
+        run: |
+          echo "Listing resources in rg-oxdsh (if exists)..."
+          if az group exists -n rg-oxdsh --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"; then
+            az resource list --resource-group rg-oxdsh --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" -o json > artifacts/rg-oxdsh-resources.json
+            echo "Saved artifacts/rg-oxdsh-resources.json"
+          else
+            echo "rg-oxdsh not found; writing empty json"
+            echo "[]" > artifacts/rg-oxdsh-resources.json
+          fi
+
+      - name: Snapshot resources in oxdsh_mgmt
+        run: |
+          echo "Listing resources in oxdsh_mgmt (if exists)..."
+          if az group exists -n oxdsh_mgmt --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"; then
+            az resource list --resource-group oxdsh_mgmt --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" -o json > artifacts/oxdsh_mgmt-resources.json
+            echo "Saved artifacts/oxdsh_mgmt-resources.json"
+          else
+            echo "oxdsh_mgmt not found; writing empty json"
+            echo "[]" > artifacts/oxdsh_mgmt-resources.json
+          fi
+
+      - name: Attempt to list / download tfstate blobs (best-effort)
+        env:
+          STORAGE_ACCOUNT: oxdshstg
+          CONTAINER: tfstate
+          SUBS: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          CORE_KEY: core.terraform.tfstate
+          MGMT_KEY: management.terraform.tfstate
         run: |
           set -euo pipefail
+          echo "Attempting to list blobs in ${STORAGE_ACCOUNT}/${CONTAINER} (may fail if firewalled)..."
+          if az storage account show --name "${STORAGE_ACCOUNT}" --resource-group oxdsh_mgmt --subscription "${SUBS}" >/dev/null 2>&1; then
+            # Try listing blobs (auth-mode login). This may fail if firewall blocks runner.
+            if az storage blob list --account-name "${STORAGE_ACCOUNT}" --container-name "${CONTAINER}" --auth-mode login --subscription "${SUBS}" -o json > artifacts/tfstate-blobs.json 2>/dev/null; then
+              echo "Saved artifacts/tfstate-blobs.json"
+              # Download known keys if present
+              for KEY in "${CORE_KEY}" "${MGMT_KEY}"; do
+                if jq -r --arg k "$KEY" '.[] | select(.name==$k) | .name' artifacts/tfstate-blobs.json | grep -q "$KEY"; then
+                  echo "Downloading blob $KEY ..."
+                  az storage blob download --account-name "${STORAGE_ACCOUNT}" --container-name "${CONTAINER}" --name "${KEY}" --file "artifacts/${KEY}" --auth-mode login --subscription "${SUBS}" || echo "Download of ${KEY} failed"
+                else
+                  echo "Blob ${KEY} not present."
+                fi
+              done
+            else
+              echo "Could not list blobs - likely storage firewall or permissions blocked. Continuing."
+            fi
+          else
+            echo "Storage account ${STORAGE_ACCOUNT} not found in RG oxdsh_mgmt or subscription. Skipping blob download."
+          fi
 
-          cd AzureTRE/core/terraform
-
-          terraform init \
-            -backend-config="resource_group_name=oxdsh_mgmt" \
-            -backend-config="storage_account_name=oxdshstg" \
-            -backend-config="container_name=tfstate" \
-            -backend-config="key=core.terraform.tfstate" \
-            -backend-config="use_azuread_auth=true"
-
-          terraform destroy -auto-approve -lock=false
-
-      # =========================
-      # Destroy MANAGEMENT
-      # =========================
-      - name: Destroy MANAGEMENT terraform
+      - name: Remove locks in rg-oxdsh (if any)
         run: |
           set -euo pipefail
+          if az group exists -n rg-oxdsh --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"; then
+            LOCKS=$(az lock list --resource-group rg-oxdsh --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" --query "[].id" -o tsv || true)
+            if [ -n "${LOCKS}" ]; then
+              echo "Found locks in rg-oxdsh: "
+              echo "${LOCKS}"
+              for L in $LOCKS; do
+                echo "Deleting lock: $L"
+                az lock delete --ids "$L" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" || echo "Failed to delete lock $L"
+              done
+            else
+              echo "No locks found in rg-oxdsh"
+            fi
+          else
+            echo "rg-oxdsh not found; skipping locks step"
+          fi
 
-          cd AzureTRE/management/terraform
+      - name: Remove locks in oxdsh_mgmt (if any)
+        run: |
+          set -euo pipefail
+          if az group exists -n oxdsh_mgmt --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"; then
+            LOCKS=$(az lock list --resource-group oxdsh_mgmt --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" --query "[].id" -o tsv || true)
+            if [ -n "${LOCKS}" ]; then
+              echo "Found locks in oxdsh_mgmt: "
+              echo "${LOCKS}"
+              for L in $LOCKS; do
+                echo "Deleting lock: $L"
+                az lock delete --ids "$L" --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" || echo "Failed to delete lock $L"
+              done
+            else
+              echo "No locks found in oxdsh_mgmt"
+            fi
+          else
+            echo "oxdsh_mgmt not found; skipping locks step"
+          fi
 
-          terraform init \
-            -backend-config="resource_group_name=oxdsh_mgmt" \
-            -backend-config="storage_account_name=oxdshstg" \
-            -backend-config="container_name=tfstate" \
-            -backend-config="key=management.terraform.tfstate" \
-            -backend-config="use_azuread_auth=true"
+      - name: Delete resource group rg-oxdsh (no-wait)
+        run: |
+          if az group exists -n rg-oxdsh --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"; then
+            echo "Deleting rg-oxdsh ..."
+            az group delete --name rg-oxdsh --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" --yes --no-wait
+            echo "Delete initiated for rg-oxdsh (no-wait)"
+          else
+            echo "rg-oxdsh not found; nothing to delete"
+          fi
 
-          terraform destroy -auto-approve -lock=false
+      - name: Delete resource group oxdsh_mgmt (no-wait)
+        run: |
+          if az group exists -n oxdsh_mgmt --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}"; then
+            echo "Deleting oxdsh_mgmt ..."
+            az group delete --name oxdsh_mgmt --subscription "${{ secrets.AZURE_SUBSCRIPTION_ID }}" --yes --no-wait
+            echo "Delete initiated for oxdsh_mgmt (no-wait)"
+          else
+            echo "oxdsh_mgmt not found; nothing to delete"
+          fi
+
+      - name: Upload artifacts (snapshots + blobs)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rg-oxdsh-backups
+          path: artifacts
