@@ -5,6 +5,7 @@ on:
 
 jobs:
   destroy:
+    environment: CICD
     runs-on: ubuntu-latest
     permissions:
       id-token: write
