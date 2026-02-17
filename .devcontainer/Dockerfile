@@ -44,25 +44,6 @@ RUN apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release 
     && apt-get update && apt-get install -y docker-ce="$DOCKER_CE_VERSION" docker-ce-cli="$DOCKER_CE_CLI_VERSION" docker-compose-plugin="$DOCKER_COMPOSE_PLUGIN_VERSION" containerd.io="$DOCKER_CONTAINERD_VERSION" docker-buildx-plugin --no-install-recommends \
     && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
-# -----------------------------------------------------------------------
-# ✅ ENSURE docker buildx IS ALWAYS AVAILABLE (CI fix for --cache-to error)
-# Use a specific buildx release asset (filename includes the tag).
-# -----------------------------------------------------------------------
-ARG BUILDX_VERSION="v0.31.1"
-# Note: adjust BUILDX_VERSION if you want a different buildx release.
-RUN set -eux; \
-    ARCH="linux-amd64"; \
-    ASSET_NAME="buildx-${BUILDX_VERSION}.${ARCH}"; \
-    BUILDX_URL="https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/${ASSET_NAME}"; \
-    mkdir -p /usr/libexec/docker/cli-plugins /root/.docker/cli-plugins /home/$USERNAME/.docker/cli-plugins; \
-    echo "Downloading buildx from ${BUILDX_URL}"; \
-    curl -fsSL "${BUILDX_URL}" -o /usr/libexec/docker/cli-plugins/docker-buildx; \
-    chmod +x /usr/libexec/docker/cli-plugins/docker-buildx; \
-    cp /usr/libexec/docker/cli-plugins/docker-buildx /root/.docker/cli-plugins/docker-buildx || true; \
-    cp /usr/libexec/docker/cli-plugins/docker-buildx /home/$USERNAME/.docker/cli-plugins/docker-buildx || true; \
-    chown -R $USERNAME:$USERNAME /home/$USERNAME/.docker || true
-# -----------------------------------------------------------------------
-
 # Install Certbot
 RUN if [ "${INTERACTIVE}" = "true" ]; then \
     apt-get update && apt-get install -y libaugeas0 --no-install-recommends \
