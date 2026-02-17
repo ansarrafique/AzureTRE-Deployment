@@ -265,7 +265,7 @@ jobs:
     needs: [deploy_management]
     environment: ${{ inputs.environmentName }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         target: [build-and-push-api, build-and-push-resource-processor, build-and-push-airlock-processor]
 
@@ -431,6 +431,8 @@ jobs:
         with:
           driver: docker-container
           install: true
+          # network=host is critical for devcontainer communication
+          driver-opts: image=moby/buildkit:latest,network=host
 
       - name: Publish bundle
         uses: ./.github/actions/devcontainer_run_command
@@ -488,6 +490,8 @@ jobs:
         with:
           driver: docker-container
           install: true
+          # network=host is critical for devcontainer communication
+          driver-opts: image=moby/buildkit:latest,network=host
 
       - name: Publish bundle
         uses: ./.github/actions/devcontainer_run_command
@@ -545,6 +549,8 @@ jobs:
         with:
           driver: docker-container
           install: true
+          # network=host is critical for devcontainer communication
+          driver-opts: image=moby/buildkit:latest,network=host
 
       - name: Register bundle
         uses: ./.github/actions/devcontainer_run_command
@@ -616,6 +622,8 @@ jobs:
         with:
           driver: docker-container
           install: true
+          # network=host is critical for devcontainer communication
+          driver-opts: image=moby/buildkit:latest,network=host
 
       - name: Register bundle
         uses: ./.github/actions/devcontainer_run_command
@@ -677,6 +685,8 @@ jobs:
         with:
           driver: docker-container
           install: true
+          # network=host is critical for devcontainer communication
+          driver-opts: image=moby/buildkit:latest,network=host
 
       - name: Register bundle
         uses: ./.github/actions/devcontainer_run_command
@@ -722,6 +732,8 @@ jobs:
         with:
           driver: docker-container
           install: true
+          # network=host is critical for devcontainer communication
+          driver-opts: image=moby/buildkit:latest,network=host
 
       - name: Deploy firewall
         uses: ./.github/actions/devcontainer_run_command
