@@ -190,6 +190,15 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           environment: ${{ (vars.AZURE_ENVIRONMENT != '' && vars.AZURE_ENVIRONMENT) || 'AzureCloud' }}
 
+      # Required for Azure TRE v0.27.0: PR #4827 introduced Porter build caching
+      # which uses Docker Buildx flags (--cache-to/--cache-from). 
+      # The default GitHub runner Docker driver does not support these flags; 
+      # this step initializes the 'docker-container' driver to enable them.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
       - name: ACR Login
         id: ci_cache_acr_login
         # will fail if this is a new env which is expected
