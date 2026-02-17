@@ -749,3 +749,4 @@ jobs:
           USER_MANAGEMENT_ENABLED: ${{ vars.USER_MANAGEMENT_ENABLED }}
           UI_SITE_NAME: "${{ inputs.UI_SITE_NAME || vars.UI_SITE_NAME }}"
           UI_FOOTER_TEXT: "${{ inputs.UI_FOOTER_TEXT || vars.UI_FOOTER_TEXT }}"
+          
