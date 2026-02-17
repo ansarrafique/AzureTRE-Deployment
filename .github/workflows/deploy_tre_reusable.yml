@@ -181,8 +181,16 @@ jobs:
           # then the default checkout will apply
           ref: ${{ inputs.prRef }}
 
+      #- name: Set up Docker BuildKit
+      #  uses: docker/setup-buildx-action@v3
+
+      # --- REQUIRED FOR v0.27.0 (PR #4827) ---
+      # This initializes the Buildx driver on the GitHub Runner host.
+      # It is required for the 'Build new devcontainer' step to use --cache-from.
       - name: Set up Docker BuildKit
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
 
       - name: Azure Login
         uses: azure/login@v2
