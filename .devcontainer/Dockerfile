@@ -46,13 +46,17 @@ RUN apt-get update && apt-get install -y ca-certificates curl gnupg lsb-release 
 
 # -----------------------------------------------------------------------
 # ✅ ENSURE docker buildx IS ALWAYS AVAILABLE (CI fix for --cache-to error)
-# This guarantees docker buildx works inside the devcontainer,
-# even if the distro plugin is not correctly detected.
+# Use a specific buildx release asset (filename includes the tag).
 # -----------------------------------------------------------------------
+ARG BUILDX_VERSION="v0.31.1"
+# Note: adjust BUILDX_VERSION if you want a different buildx release.
 RUN set -eux; \
-    BUILDX_RELEASE_URL="https://github.com/docker/buildx/releases/latest/download/buildx-linux-amd64"; \
+    ARCH="linux-amd64"; \
+    ASSET_NAME="buildx-${BUILDX_VERSION}.${ARCH}"; \
+    BUILDX_URL="https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/${ASSET_NAME}"; \
     mkdir -p /usr/libexec/docker/cli-plugins /root/.docker/cli-plugins /home/$USERNAME/.docker/cli-plugins; \
-    curl -fsSL "${BUILDX_RELEASE_URL}" -o /usr/libexec/docker/cli-plugins/docker-buildx; \
+    echo "Downloading buildx from ${BUILDX_URL}"; \
+    curl -fsSL "${BUILDX_URL}" -o /usr/libexec/docker/cli-plugins/docker-buildx; \
     chmod +x /usr/libexec/docker/cli-plugins/docker-buildx; \
     cp /usr/libexec/docker/cli-plugins/docker-buildx /root/.docker/cli-plugins/docker-buildx || true; \
     cp /usr/libexec/docker/cli-plugins/docker-buildx /home/$USERNAME/.docker/cli-plugins/docker-buildx || true; \
