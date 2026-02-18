@@ -527,7 +527,6 @@ jobs:
           # if the following values are missing (i.e. not triggered via comment workflow)
           # then the default checkout will apply
           ref: ${{ inputs.prRef }}
-
       - name: Register bundle
         uses: ./.github/actions/devcontainer_run_command
         with:
@@ -592,7 +591,6 @@ jobs:
           # if the following values are missing (i.e. not triggered via comment workflow)
           # then the default checkout will apply
           ref: ${{ inputs.prRef }}
-
       - name: Register bundle
         uses: ./.github/actions/devcontainer_run_command
         with:
@@ -647,7 +645,6 @@ jobs:
           # if the following values are missing (i.e. not triggered via comment workflow)
           # then the default checkout will apply
           ref: ${{ inputs.prRef }}
-
       - name: Register bundle
         uses: ./.github/actions/devcontainer_run_command
         with:
@@ -733,7 +730,6 @@ jobs:
           # if the following values are missing (i.e. not triggered via comment workflow)
           # then the default checkout will apply
           ref: ${{ inputs.prRef }}
-
       - name: Deploy UI
         uses: ./.github/actions/devcontainer_run_command
         with:
@@ -753,4 +749,3 @@ jobs:
           USER_MANAGEMENT_ENABLED: ${{ vars.USER_MANAGEMENT_ENABLED }}
           UI_SITE_NAME: "${{ inputs.UI_SITE_NAME || vars.UI_SITE_NAME }}"
           UI_FOOTER_TEXT: "${{ inputs.UI_FOOTER_TEXT || vars.UI_FOOTER_TEXT }}"
-          
