@@ -18,7 +18,7 @@
       "DOCKER_GROUP_ID": "${localEnv:DOCKER_GROUP_ID}",
       "INTERACTIVE": "true",
       "UPSTREAM_REPO": "ansarrafique/AzureTRE",
-      "UPSTREAM_REPO_VERSION": "fix/windows-ds-vm-connectivity-v0.27.1",
+      "UPSTREAM_REPO_VERSION": "fix/linux-connectivity-v0.27.1",
       "GITHUB_TOKEN": ""
     }
   },
