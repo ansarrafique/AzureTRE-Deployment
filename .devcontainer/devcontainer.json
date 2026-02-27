@@ -18,7 +18,7 @@
       "DOCKER_GROUP_ID": "${localEnv:DOCKER_GROUP_ID}",
       "INTERACTIVE": "true",
       "UPSTREAM_REPO": "ansarrafique/AzureTRE",
-      "UPSTREAM_REPO_VERSION": "fix/linux-rdp-bootstrap-v0.27.2",
+      "UPSTREAM_REPO_VERSION": "v0.27.2",
       "GITHUB_TOKEN": ""
     }
   },
