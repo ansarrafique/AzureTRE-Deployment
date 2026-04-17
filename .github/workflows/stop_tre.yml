@@ -9,13 +9,6 @@ on:
         default: CICD
         required: true
 
-# Add this later when you're happy with manual runs:
-# on:
-#   schedule:
-#     - cron: "0 17 * * 1-5"   # 18:00 UK time during BST
-#     - cron: "0 17 * * 6,0"   # Weekend safety stop
-#   workflow_dispatch:
-
 concurrency: "tre-stop-${{ github.ref }}"
 
 jobs:
@@ -41,7 +34,6 @@ jobs:
         with:
           COMMAND: "make tre-stop"
           DEVCONTAINER_TAG: "latest"
-          CI_CACHE_ACR_NAME: ${{ secrets.CI_CACHE_ACR_NAME }}
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
           AZURE_ENVIRONMENT: ${{ vars.AZURE_ENVIRONMENT }}
           TRE_ID: ${{ secrets.TRE_ID }}
