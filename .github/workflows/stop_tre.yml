@@ -34,5 +34,6 @@ jobs:
           COMMAND: "make tre-stop"
           DEVCONTAINER_TAG: ${{ inputs.DEVCONTAINER_TAG }}
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          ACR_NAME: ${{ secrets.ACR_NAME }}
           AZURE_ENVIRONMENT: ${{ vars.AZURE_ENVIRONMENT }}
           TRE_ID: ${{ secrets.TRE_ID }}
