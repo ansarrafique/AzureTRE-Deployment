@@ -8,6 +8,11 @@ on:
         type: environment
         default: CICD
         required: true
+      DEVCONTAINER_TAG:
+        description: Devcontainer tag to use
+        type: string
+        default: latest
+        required: true
 
 concurrency: "tre-stop-${{ github.ref }}"
 
@@ -28,7 +33,6 @@ jobs:
         with:
           COMMAND: "make tre-stop"
           DEVCONTAINER_TAG: ${{ inputs.DEVCONTAINER_TAG }}
-          CI_CACHE_ACR_NAME: ${{ secrets.CI_CACHE_ACR_NAME }}
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
           AZURE_ENVIRONMENT: ${{ vars.AZURE_ENVIRONMENT }}
           TRE_ID: ${{ secrets.TRE_ID }}
