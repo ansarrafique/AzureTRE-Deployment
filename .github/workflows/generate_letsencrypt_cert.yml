@@ -1,0 +1,78 @@
+---
+name: Generate Let's Encrypt Certificate
+
+on: # yamllint disable-line rule:truthy
+  workflow_dispatch:
+    inputs:
+      environmentName:
+        description: The name of the GitHub Actions environment to run in
+        type: string
+        default: Prod
+        required: false
+      DEVCONTAINER_TAG:
+        description: The devcontainer image tag to use
+        type: string
+        default: latest
+        required: false
+
+jobs:
+  generate_certificate:
+    name: Generate Let's Encrypt Certificate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment: ${{ inputs.environmentName || 'Prod' }}
+    steps:
+      - name: Show inputs
+        run: |
+          echo "Inputs"
+          echo "======"
+          echo "environmentName : ${{ inputs.environmentName || 'Prod' }}"
+          echo "DEVCONTAINER_TAG: ${{ inputs.DEVCONTAINER_TAG || 'latest' }}"
+
+      - name: Check required values
+        run: |
+          if [ "${{ secrets.AZURE_CREDENTIALS }}" == '' ]; then
+            echo "Missing secret: AZURE_CREDENTIALS" && exit 1
+          fi
+          if [ "${{ secrets.CI_CACHE_ACR_NAME }}" == '' ] && [ "${{ secrets.ACR_NAME }}" == '' ]; then
+            echo "Missing secret: CI_CACHE_ACR_NAME (or fallback ACR_NAME)" && exit 1
+          fi
+          if [ "${{ secrets.TRE_ID }}" == '' ]; then
+            echo "Missing secret: TRE_ID" && exit 1
+          fi
+          if [ "${{ vars.LOCATION }}" == '' ]; then
+            echo "Missing variable: LOCATION" && exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Generate certificate
+        uses: ./.github/actions/devcontainer_run_command
+        with:
+          COMMAND: |
+            if [ ! -x /opt/certbot/bin/certbot ]; then
+              sudo apt-get update
+              sudo apt-get install -y python3 python3-venv libaugeas0
+              sudo python3 -m venv /opt/certbot
+              sudo /opt/certbot/bin/pip install --no-cache-dir --upgrade pip
+              sudo /opt/certbot/bin/pip install --no-cache-dir certbot
+            fi
+            make letsencrypt
+          DEVCONTAINER_TAG: ${{ inputs.DEVCONTAINER_TAG || 'latest' }}
+          CI_CACHE_ACR_NAME: ${{ secrets.CI_CACHE_ACR_NAME || secrets.ACR_NAME }}
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          AZURE_ENVIRONMENT: ${{ vars.AZURE_ENVIRONMENT }}
+          AAD_TENANT_ID: "${{ secrets.AAD_TENANT_ID }}"
+          API_CLIENT_ID: "${{ secrets.API_CLIENT_ID }}"
+          TEST_ACCOUNT_CLIENT_ID: "${{ secrets.TEST_ACCOUNT_CLIENT_ID }}"
+          TEST_ACCOUNT_CLIENT_SECRET: "${{ secrets.TEST_ACCOUNT_CLIENT_SECRET }}"
+          TRE_ID: ${{ secrets.TRE_ID }}
+          CUSTOM_DOMAIN: "${{ secrets.CUSTOM_DOMAIN }}"
+          LOCATION: ${{ vars.LOCATION }}
+          ACR_NAME: ${{ secrets.ACR_NAME }}
+          MGMT_RESOURCE_GROUP_NAME: ${{ secrets.MGMT_RESOURCE_GROUP_NAME }}
+          MGMT_STORAGE_ACCOUNT_NAME: ${{ secrets.MGMT_STORAGE_ACCOUNT_NAME }}

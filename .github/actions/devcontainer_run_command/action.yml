@@ -168,6 +168,10 @@ inputs:
     description: "Add allowed domain name to the DNS security policy"
     required: false
     default: "[]"
+  CUSTOM_DOMAIN:
+    description: "Optional custom domain used for certificate generation"
+    required: false
+    default: ""
 
 runs:
   using: composite
