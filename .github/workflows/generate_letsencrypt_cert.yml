@@ -7,7 +7,7 @@ on: # yamllint disable-line rule:truthy
       environmentName:
         description: The name of the GitHub Actions environment to run in
         type: string
-        default: Prod
+        default: CICD
         required: false
       DEVCONTAINER_TAG:
         description: The devcontainer image tag to use
@@ -21,13 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    environment: ${{ inputs.environmentName || 'Prod' }}
+    environment: ${{ inputs.environmentName || 'CICD' }}
     steps:
       - name: Show inputs
         run: |
           echo "Inputs"
           echo "======"
-          echo "environmentName : ${{ inputs.environmentName || 'Prod' }}"
+          echo "environmentName : ${{ inputs.environmentName || 'CICD' }}"
           echo "DEVCONTAINER_TAG: ${{ inputs.DEVCONTAINER_TAG || 'latest' }}"
 
       - name: Check required values
@@ -71,7 +71,7 @@ jobs:
           TEST_ACCOUNT_CLIENT_ID: "${{ secrets.TEST_ACCOUNT_CLIENT_ID }}"
           TEST_ACCOUNT_CLIENT_SECRET: "${{ secrets.TEST_ACCOUNT_CLIENT_SECRET }}"
           TRE_ID: ${{ secrets.TRE_ID }}
-          CUSTOM_DOMAIN: "${{ secrets.CUSTOM_DOMAIN }}"
+          CUSTOM_DOMAIN: ""
           LOCATION: ${{ vars.LOCATION }}
           ACR_NAME: ${{ secrets.ACR_NAME }}
           MGMT_RESOURCE_GROUP_NAME: ${{ secrets.MGMT_RESOURCE_GROUP_NAME }}
